@@ -206,6 +206,7 @@ What `score_balls` computes for every chase ball:
 | `score_pool(pool, role, weights)` | Rating, 0–100 percentile, confidence (Medium from 300 / 360 pressure balls, High from 500 / 600), sort, rank. |
 | `weight_variants(role, rel)` | Alternative rating weights for the sensitivity tests: data-driven, expert, equal, impact-only. |
 | `compare(base, other, label)` | Top-10 overlap, same #1, and Spearman correlation between two rankings. |
+| `save_profiles(s)` | Saves every player's metrics (`players_all_*.csv`, including players below the threshold) and `pressure_profile.json` (where high-pressure balls come from). |
 | `run_all()` | Builds the baseline ranking plus every sensitivity variant: competition weighting (tiered, IPL-primary, all equal, recency) and pressure definition (baseline, equal, situation only, situation + stakes). |
 | `main()` | Saves `rankings_batting.csv` and `rankings_bowling.csv` and writes `outputs/cup_rankings_report.md` (weights, top 10, ranks 11–20, sensitivity). |
 
@@ -221,3 +222,18 @@ What `score_balls` computes for every chase ball:
 | `temporal(s, ctx, weights)` | Rates players on 2022–24 and again on 2025–26. Do early pressure ratings predict later pressure performance, and do they add information **beyond normal-situation ability** (partial correlation)? |
 | `scatter(base, role, fname)` | Pressure vs usual chart: strike rate for batters, economy for bowlers, top 10 highlighted, diagonal = "same as usual". |
 | `main()` | Runs everything and writes `outputs/validation_rankings_report.md` and `outputs/figures/*.png`. |
+
+---
+
+## `report/build_report.py` — the methodology report (PDF)
+Builds `outputs/SupeRR_Selector_Methodology_Report.pdf` from the pipeline outputs. Every table and number is read from `outputs/`, so the report always matches the code.
+
+| Function | What it does |
+|---|---|
+| `md_table(md, heading)` | Reads the first markdown table after a heading in one of the pipeline's reports. |
+| `load()` | Loads the final rankings, all-player tables, repeatability, sensitivity, validation tables and pressure profile. |
+| `pipeline_figure()` | Draws the method-overview diagram. |
+| `role_section(bat, bowl)` | §4.4: the top three per batting and bowling role, and the data behind the absence of death specialists from the top 10. |
+| `dip_section(bat, bowl)` | §4.5: top-10 players whose own numbers fall under pressure, named and explained. |
+| `rr_section(d)` | §6: the Rajasthan Royals squad through the same method (ranked players and those below the threshold). |
+| `build()` | Assembles the report following the brief's five sections plus the RR section and appendix. |

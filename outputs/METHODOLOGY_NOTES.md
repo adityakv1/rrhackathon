@@ -94,7 +94,7 @@ Every assumption below is tested against the data. Scripts that reproduce each o
   - Batting position is the median over the last 2 years; keeper = kept wicket in at least 30% of matches.
   - Bowling phase role comes from IPL usage when available. Death specialist = 33%+ of balls at the death, against a ~20% baseline.
 - **Sensitivity (overlap with the final top 10, 10 alternatives; see report §4.3):** 5–9 of the batters and 6–9 of the bowlers survive (median 7 and 8). Competition weighting changes least (8–9/10). Impact-only rating (5/10 batters) and situation-only pressure (7/10 batters, 6/10 bowlers) change most. Places 1–5 survive in 10–12 of 12 variants; places 6–10 are less stable (Jaiswal 3/12, Boult 5/12).
-- **Finding:** death specialists who stay reliable under pressure are rare. This holds even against same-situation peers, so it is not an artefact of death overs being expensive.
+- **Finding (death bowling):** only 6 of 65 eligible bowlers are death specialists, and none reaches the top 10. They do beat same-situation peers under pressure (0.23 runs per over fewer on average), but the leading middle-overs bowlers beat their peers by more (0.33 runs per over), and economy is the most repeatable bowling measure. The report's §4.4 therefore adds best-by-role tables.
 
 ### Known limitation — chasing has become easier
 - Chase win rate: 48% before 2025, 53% in 2025, 55% in 2026.

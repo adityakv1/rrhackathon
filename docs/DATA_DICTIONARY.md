@@ -117,3 +117,9 @@ Written by `src/cup.py`, one row per **eligible** player, sorted by rank. Prefix
 - `median_rank`, `rank_p05` and `rank_p95` (90% interval), and `p_top10`.
 
 `outputs/sensitivity_top10_*.csv`: the top 10 under every sensitivity variant, side by side.
+
+## `outputs/players_all_batting.csv`, `outputs/players_all_bowling.csv` — every player
+The same columns as `rankings_*.csv`, but for **all** players, including those below the eligibility threshold (written by `src/cup.py`, `save_profiles`). They are used for squad views, such as the Rajasthan Royals section of the report. Rank columns are absent because only eligible players are ranked.
+
+## `outputs/pressure_profile.json` — where high-pressure balls come from
+The share of high-pressure balls (batting view) in nearly-decided games (win probability below 15% or above 85%), in overs 1–3, in overs 7–16 and in overs 17–20.

@@ -489,6 +489,28 @@ def run_all():
     return s, out, variants, diag
 
 
+def save_profiles(s: pd.DataFrame) -> None:
+    """Save every player's metrics (eligible or not) and a profile of where high-pressure balls come from.
+
+    outputs/players_all_batting.csv / players_all_bowling.csv: like rankings_*.csv but for ALL players
+    (used for squad views, e.g. players just below the eligibility threshold).
+    outputs/pressure_profile.json: share of high-pressure balls in nearly-decided games and by over band."""
+    import json
+    ctx = player_context(s)
+    for name, f in [("batting", batting_table), ("bowling", bowling_table)]:
+        t, _, _ = f(s)
+        t.join(ctx).to_csv(C.OUTPUTS / f"players_all_{name}.csv")
+    wp = pd.read_parquet(C.PROCESSED / "pressure_msp.parquet", columns=["match_id", "innings", "innings_ball_num", "wp_before"])
+    x = s[s["ball_faced"] & s["hp_bat"]][["match_id", "innings", "innings_ball_num", "overid"]].merge(
+        wp, on=["match_id", "innings", "innings_ball_num"], how="left")
+    prof = {"hp_balls": int(len(x)),
+            "share_nearly_decided (WP<15% or >85%)": float(((x["wp_before"] < 0.15) | (x["wp_before"] > 0.85)).mean()),
+            "share_overs_1_3": float((x["overid"] <= 3).mean()),
+            "share_overs_7_16": float(x["overid"].between(7, 16).mean()),
+            "share_overs_17_20": float((x["overid"] >= 17).mean())}
+    (C.OUTPUTS / "pressure_profile.json").write_text(json.dumps(prof, indent=2), encoding="utf-8")
+
+
 BAT_COLS = ["player_name", "batting_role", "keeper", "cup_100", "confidence", "all_p_balls", "all_p_sr", "all_n_sr",
             "all_p_avg", "all_n_avg", "all_p_dot_pct", "pressure_innings", "reliability", "ipl_p_balls", "t20i_p_balls"]
 BOWL_COLS = ["player_name", "bowling_role", "pace_or_spin", "cup_100", "confidence", "all_p_balls", "all_p_econ", "all_n_econ",
@@ -500,6 +522,7 @@ def main():
     s, out, variants, diag = run_all()
     C.OUTPUTS.mkdir(exist_ok=True)
     tops = {}
+    save_profiles(s)
     rep = ["# Consistency Under Pressure — rankings\n",
            f"High pressure = top {PRESSURE_SHARE:.0%} of balls by combined pressure (CPI) within each competition group; "
            f"CPI weights {CPI_WEIGHTS}. Ball weight by tier {TIER_WEIGHT}; all seasons equal. "

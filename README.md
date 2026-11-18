@@ -15,7 +15,9 @@ python run_pipeline.py --skip validate_rankings   # skip the slow bootstrap, ~7 
 python run_pipeline.py --from cup           # re-rank only (needs earlier outputs)
 ```
 
-Raw CSVs go in `data/raw/`. Every result is regenerated from them. Nothing is entered by hand.
+Then `python report/build_report.py` rebuilds the methodology report PDF from the outputs.
+
+Raw CSVs go in `data/raw/`. They are **not** in this repository: they are the organisers' data pack. Every result is regenerated from them. Nothing is entered by hand.
 
 **Results:**
 - `outputs/rankings_batting.csv` and `outputs/rankings_bowling.csv`: every eligible player with rank, rating and supporting stats.

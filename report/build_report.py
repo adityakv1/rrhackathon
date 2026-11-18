@@ -6,6 +6,7 @@ Every table is read from files the pipeline writes (outputs/*.csv, outputs/*_rep
 report always matches the code. Run `python run_pipeline.py` first.
 """
 import io
+import json
 import re
 import sys
 from pathlib import Path
@@ -121,6 +122,9 @@ def load():
     d["temporal"] = md_table(val, "## 3.")
     for r in ["bat", "bowl"]:
         d[f"top_{r}"] = pd.read_csv(OUT / f"sensitivity_top10_{'batting' if r == 'bat' else 'bowling'}.csv", index_col=0)
+    d["all_bat"] = pd.read_csv(OUT / "players_all_batting.csv")         # every player, eligible or not
+    d["all_bowl"] = pd.read_csv(OUT / "players_all_bowling.csv")
+    d["profile"] = json.loads((OUT / "pressure_profile.json").read_text(encoding="utf-8"))
     return d
 
 
@@ -164,6 +168,145 @@ def fmt(x, nd=1):
 
 
 # ------------------------------------------------------------------ the report
+def _rank_lookup(final: pd.DataFrame) -> dict:
+    return dict(zip(final["player_id"], final["final_rank"]))
+
+
+def role_section(bat: pd.DataFrame, bowl: pd.DataFrame) -> list:
+    """4.4: best three per role, and the data behind the absence of death specialists from the top 10."""
+    out = [P("4.4 Best under pressure by role", "h2"),
+           P("The submission ranks players regardless of role. A selector also needs the best option for each job, so the same "
+             "final rating is shown within each role (roles are descriptive: usual batting position over the last two years, and "
+             "the phase in which a bowler bowls most of his balls; they play no part in the rating).")]
+
+    def cell(r, kind):
+        stat = (f"SR {r.all_p_sr:.0f} / {r.all_n_sr:.0f}" if kind == "bat" else f"Econ {r.all_p_econ:.2f} / {r.all_n_econ:.2f}")
+        return f"<b>{r.player_name}</b> (#{int(r.final_rank)})<br/><font color='#6b7280'>{stat}</font>"
+
+    rows = [["Batting role", "1st", "2nd", "3rd"]]
+    groups = [(lbl, bat[bat.batting_role == lbl]) for lbl in ["Opener", "Top order (3)", "Middle order (4-5)", "Finisher (6-7)"]]
+    groups.append(("Wicketkeepers", bat[bat.keeper == True]))  # noqa: E712
+    for lbl, g in groups:
+        top = g.sort_values("final_rank").head(3)
+        rows.append([f"{lbl} ({len(g)})"] + [cell(r, "bat") for _, r in top.iterrows()] + [""] * (3 - len(top)))
+    out.append(table(rows, [3.4 * cm, 4.5 * cm, 4.5 * cm, 4.6 * cm], bold_first_col=True))
+    out.append(P("(n) = eligible players in the role. SR = strike rate under pressure / usual.", "caption"))
+
+    rows = [["Bowling role", "1st", "2nd", "3rd"]]
+    groups = [(lbl, bowl[bowl.bowling_role == lbl]) for lbl in
+              ["Powerplay specialist", "Middle-overs specialist", "Death specialist", "All-phase"]]
+    groups += [("Pace", bowl[bowl.pace_or_spin == "Pace"]), ("Spin", bowl[bowl.pace_or_spin == "Spin"])]
+    for lbl, g in groups:
+        top = g.sort_values("final_rank").head(3)
+        rows.append([f"{lbl} ({len(g)})"] + [cell(r, "bowl") for _, r in top.iterrows()] + [""] * (3 - len(top)))
+    out.append(table(rows, [3.4 * cm, 4.5 * cm, 4.5 * cm, 4.6 * cm], bold_first_col=True))
+    out.append(P("Econ = economy under pressure / usual. Death specialist = at least 33% of balls in overs 17–20 (the average "
+                 "bowler bowls ~20% there).", "caption"))
+
+    per_over = bowl.groupby("bowling_role")["p_runs_ae"].mean() * -6     # runs per over saved vs same-situation peers
+    death = bowl[bowl.bowling_role == "Death specialist"].sort_values("final_rank")
+    best = death.iloc[0]
+    out.append(P(f"<b>Why no death specialist is in the bowling top 10.</b> Only {len(death)} of {len(bowl)} eligible bowlers are death "
+                 f"specialists. They do beat bowlers facing the same situations — on average {per_over['Death specialist']:.2f} runs per "
+                 f"over fewer under pressure — but the leading middle-overs bowlers beat their peers by more "
+                 f"({per_over['Middle-overs specialist']:.2f} runs per over), and economy is the most repeatable bowling measure (§2.4). "
+                 f"The best death specialist, {best.player_name}, ranks #{int(best.final_rank)}. For a team choosing who bowls the 19th "
+                 f"over, the role table above is the better guide than the overall list.", "callout"))
+    return out
+
+
+def dip_section(bat: pd.DataFrame, bowl: pd.DataFrame) -> list:
+    """4.5: top-10 players whose own numbers are worse under pressure — named and explained."""
+    tb, tw = bat.head(10), bowl.head(10)
+    db = tb[tb.all_p_sr < tb.all_n_sr - 8]
+    dw = tw[tw.all_p_econ > tw.all_n_econ + 0.5]
+    if not len(db) and not len(dw):
+        return []
+    out = [P("4.5 Top-10 players who dip under pressure", "h2"),
+           P("The brief compares pressure with each player's usual level, so we name the top-10 players whose own numbers fall "
+             "under pressure and explain why they still rank highly:")]
+    items = []
+    for _, r in db.iterrows():
+        pos = int((bat.all_p_sr > r.all_p_sr).sum() + 1)
+        items.append(f"<b>{r.player_name} (#{int(r.final_rank)})</b>: strike rate {r.all_n_sr:.0f} usually, {r.all_p_sr:.0f} under "
+                     f"pressure. That {r.all_p_sr:.0f} is still the {pos}{'st' if pos == 1 else 'nd' if pos == 2 else 'rd' if pos == 3 else 'th'} "
+                     f"highest pressure strike rate of {len(bat)} eligible batters, {r.p_runs_ae_raw * 100:+.1f} runs per 100 balls against "
+                     f"batters facing the same situations.")
+    for _, r in dw.iterrows():
+        pos = int((bowl.all_p_econ < r.all_p_econ).sum() + 1)
+        items.append(f"<b>{r.player_name} (#{int(r.final_rank)})</b>: economy {r.all_n_econ:.2f} usually, {r.all_p_econ:.2f} under "
+                     f"pressure. His usual level is exceptional; under pressure he still concedes {-r.p_runs_ae_raw * 6:.2f} runs per over "
+                     f"fewer than bowlers in the same situations ({pos}{'st' if pos == 1 else 'nd' if pos == 2 else 'rd' if pos == 3 else 'th'} "
+                     f"best pressure economy of {len(bowl)}).")
+    out += bullets(items)
+    out.append(P("Ranking on the dip itself would reward lesser players who move from poor to average, and only about 7–10% of a "
+                 "player's personal pressure-vs-usual gap persists (§2.2, §5.1). So we rank on performance in pressure situations "
+                 "and report the dip openly.", "callout"))
+    return out
+
+
+def rr_section(d: dict) -> list:
+    """6: the same method applied to the Rajasthan Royals squad."""
+    allb, allw = d["all_bat"], d["all_bowl"]
+    rk_b, rk_w = _rank_lookup(d["bat"]), _rank_lookup(d["bowl"])
+    nb, nw = len(d["bat"]), len(d["bowl"])
+    out = [P("6. What this means for Rajasthan Royals", "h1"),
+           P("Round 1 asks for the best players across the league. Because this is the Royals' competition, we also ran the RR "
+             "squad (players listed for Rajasthan Royals in the latest IPL season of the supplied mapping) through the same method. "
+             "The ratings, thresholds and pressure definition are unchanged.")]
+
+    def status(pid, rk, n):
+        return f"#{int(rk[pid])} of {n}" if pid in rk else "below threshold"
+
+    b = allb[(allb.current_rr == True) & (allb.all_p_balls >= 100)].sort_values("all_p_balls", ascending=False)  # noqa: E712
+    rows = [["Batter", "Role", "Pressure balls", "SR pressure", "SR usual", "Change", "Overall rank"]]
+    for _, r in b.iterrows():
+        rows.append([f"<b>{r.player_name}</b>", r.batting_role, int(r.all_p_balls), f"{r.all_p_sr:.0f}", f"{r.all_n_sr:.0f}",
+                     f"{r.all_p_sr - r.all_n_sr:+.0f}", status(r.player_id, rk_b, nb)])
+    out += [P("6.1 Batting", "h2"), table(rows, [3.6 * cm, 3.1 * cm, 2.0 * cm, 1.9 * cm, 1.7 * cm, 1.6 * cm, 3.1 * cm]),
+            P("RR squad players with at least 100 high-pressure balls faced. Below threshold = fewer than 200 pressure balls or "
+              "15 pressure innings, so not ranked.", "caption")]
+    w = allw[(allw.current_rr == True) & (allw.all_p_balls >= 100)].sort_values("all_p_balls", ascending=False)  # noqa: E712
+    rows = [["Bowler", "Role", "Pressure balls", "Econ pressure", "Econ usual", "Change", "Overall rank"]]
+    for _, r in w.iterrows():
+        rows.append([f"<b>{r.player_name}</b>", r.bowling_role.replace(" specialist", ""), int(r.all_p_balls),
+                     f"{r.all_p_econ:.2f}", f"{r.all_n_econ:.2f}", f"{r.all_p_econ - r.all_n_econ:+.2f}", status(r.player_id, rk_w, nw)])
+    out += [P("6.2 Bowling", "h2"), table(rows, [3.6 * cm, 3.1 * cm, 2.0 * cm, 1.9 * cm, 1.7 * cm, 1.6 * cm, 3.1 * cm]),
+            P("RR squad players with at least 100 high-pressure balls bowled. Change = pressure minus usual economy "
+              "(negative = tighter under pressure).", "caption")]
+
+    # ---- findings, computed
+    bb = b.set_index("player_name")
+    top_b = [n for n in bb.index if bb.at[n, "player_id"] in rk_b and rk_b[bb.at[n, "player_id"]] <= 10]
+    risers = bb[(bb.all_p_sr - bb.all_n_sr) >= 8].index.tolist()
+    fallers = bb[(bb.all_p_sr - bb.all_n_sr) <= -8].sort_values("all_p_sr").index.tolist()
+    young = b[(~b.player_id.isin(rk_b)) & (b.all_p_sr >= 180)]
+    ww = w.copy()
+    ww["rank"] = ww.player_id.map(rk_w)
+    best_w = ww.dropna(subset=["rank"]).sort_values("rank")
+    death_rr = ww[ww.bowling_role == "Death specialist"]
+    items = [f"<b>Pressure batting:</b> {', '.join(top_b) if top_b else 'no RR batter'} "
+             f"{'is' if len(top_b) == 1 else 'are'} in the league-wide top 10. "
+             + (f"{', '.join(risers)} score{'s' if len(risers) == 1 else ''} faster under pressure than usually. " if risers else "")
+             + (f"{', '.join(fallers)} slow{'s' if len(fallers) == 1 else ''} down markedly when it matters — the main batting risk "
+                f"in the squad." if fallers else "")]
+    if len(young):
+        y = young.iloc[0]
+        items.append(f"<b>One to watch:</b> {y.player_name} strikes at {y.all_p_sr:.0f} under pressure, but on only "
+                     f"{int(y.all_p_balls)} pressure balls — below our threshold, so the method cannot yet call it reliable.")
+    if len(best_w):
+        items.append(f"<b>Pressure bowling:</b> the best-ranked RR bowlers are "
+                     + ", ".join(f"{n} (#{int(r)})" for n, r in zip(best_w.player_name.head(2), best_w["rank"].head(2)))
+                     + f"; no RR bowler is in the league-wide top 10.")
+    items.append("<b>Death overs:</b> " + ("no RR bowler qualifies as a death specialist on our definition, " if not len(death_rr) else "")
+                 + "so the death role is where the squad is thinnest under pressure. The role table in §4.4 lists the bowlers who "
+                   "perform best there across the league.")
+    out += [P("6.3 What the data says", "h2")] + bullets(items)
+    out.append(P("These are statistical findings from 2022–2026 data under our pressure definition, intended to inform — not replace — "
+                 "the judgement of selectors and coaches.", "caption"))
+    return out
+
+
 def build():
     d = load()
     bat, bowl = d["bat"], d["bowl"]
@@ -191,6 +334,8 @@ def build():
         "batters); scoring rate, survival and economy under pressure are the skills that repeat.",
         "<b>Key finding 2:</b> batters show a pressure-specific trait beyond general ability (partial r = 0.27, 2022–24 → 2025–26); "
         "bowlers do not — bowling under pressure is mostly bowling quality (normal economy predicts later pressure economy, r = 0.62).",
+        "<b>For selectors:</b> best-by-role tables (incl. death bowling) are in §4.4, and the Rajasthan Royals squad viewed "
+        "through the same method is in §6.",
     ])
     story.append(Spacer(1, 6))
     hdr = ["#", "Batter", "Conf.", "P(top 10)", "", "#", "Bowler", "Conf.", "P(top 10)"]
@@ -204,14 +349,15 @@ def build():
     story.append(P(f"Order = bagged rating (mean over 100 match-level bootstrap resamples). Confidence from the number of "
                    f"high-pressure balls (bat: Medium ≥300, High ≥500; bowl: Medium ≥360, High ≥600). Eligible pool: {nb} batters, "
                    f"{nw} bowlers.", "caption"))
-    story += fig(pipeline_figure(), 16.5, "Figure 1 — Method overview. Code: run_pipeline.py (8 steps, ~12 minutes end to end).")
     story.append(PageBreak())
 
     # ================================================================ 1. pressure definition
     story += [P("1. Pressure definition", "h1"),
               P("Our principle: <b>a ball is a pressure ball when a lot is riding on it for this player</b>. That has three "
                 "independent sources, each measured on a 0–100 scale and computed only from information available at the time "
-                "(no future results are ever used)."),
+                "(no future results are ever used).")]
+    story += fig(pipeline_figure(), 15.5, "Figure 1 — Method overview. Code: run_pipeline.py (8 steps, ~12 minutes end to end).")
+    story += [
               P("1.1 Match Situation Pressure (MSP) — how much can this ball swing the match?", "h2"),
               P("For every delivery we reconstruct the state before the ball (runs required, legal balls left, wickets in hand, "
                 "target, run rates, phase) and estimate the batting side's <b>win probability</b> (WP):"),
@@ -263,6 +409,12 @@ def build():
                    "strike rate barely moves: pressure changes how much each ball matters, not the average ball, which is "
                    "why differences between players carry the signal.", "caption"))
     story += fig(FIG / "pressure_separation.png", 16.5, "Figure 2 — Outcomes by pressure decile (shaded = high-pressure zone).")
+    pf = d["profile"]
+    story.append(P(f"<b>Where the high-pressure balls come from:</b> {pf['share_overs_1_3']:.0%} are in overs 1–3 (an open game, "
+                   f"where an early wicket moves the result most), {pf['share_overs_7_16']:.0%} in overs 7–16 and "
+                   f"{pf['share_overs_17_20']:.0%} in overs 17–20. Only {pf['share_nearly_decided (WP<15% or >85%)']:.1%} come from "
+                   f"games that were nearly decided (win probability below 15% or above 85%): the index tracks live contests, as "
+                   f"the brief's 'how close the contest is' requires."))
     story += [P("1.6 Worked example — Virat Kohli, SRH v RCB, IPL 2023 (100 off 63 chasing 187)", "h2"),
               P("Over 15.2: RCB 133/0 need 54 off 36 → WP 94.7%; expected swing 0.0064 (0.46× an average ball) → MSP 17. RCB "
                 "were 5th, fighting for the play-offs: P(title | win) 9.5% − P(title | lose) 1.3% → TSP 72nd percentile. Kohli's "
@@ -432,6 +584,9 @@ def build():
     story += [pair, P("Figure 5 — Final rank (diamond), bootstrap median rank (dot) and 90% interval from 100 match-level "
                       "resamples; left batters, right bowlers.", "caption")]
     story.append(PageBreak())
+    story += role_section(bat, bowl)
+    story += dip_section(bat, bowl)
+    story.append(Spacer(1, 10))
 
     # ================================================================ 5. reliability & limitations
     story += [P("5. Reliability and limitations", "h1"),
@@ -465,9 +620,10 @@ def build():
         "<b>Chasing became easier over the period</b> (chase win rate 48% to 2024, 53% in 2025, 55% in 2026). Out of time the "
         "win-probability models are a few points pessimistic for chasers; production models are refit on all seasons and "
         "MSP is a rank of leverage, which is robust to this level shift.",
-        "<b>Late overs dominate the high-pressure set:</b> with few balls left any live chase has high leverage, including comfortable "
-        "ones (e.g. 23 off 18 with 10 wickets). This is how leverage is defined; a 'direction' variant (more pressure on the side "
-        "behind) is a natural extension.",
+        f"<b>Start and end of an innings carry most leverage:</b> {pf['share_overs_1_3']:.0%} of high-pressure balls are in overs "
+        f"1–3 and {pf['share_overs_17_20']:.0%} in overs 17–20, because that is where one ball moves the result most. A comfortable "
+        f"finish can still qualify (e.g. 23 off 18 with 10 wickets in hand); a 'direction' variant that adds pressure for the side "
+        f"behind is a natural extension.",
         "<b>Form pressure is a proxy</b> built from statistics, not a measure of a player's mental state.",
         "<b>Tournament structure</b> is not recoverable for some multi-team events (Asia Cup group and Super 4 stages, 108 team-games); "
         "their stakes are neutral rather than guessed.",
@@ -479,6 +635,8 @@ def build():
         "Three matches whose final state cannot reproduce their recorded result and rain cuts within an innings (reduced limit "
         "applied to the whole innings) are documented edge cases.",
     ])
+    story.append(PageBreak())
+    story += rr_section(d)
     story += [P("Appendix — Reproducibility", "h1"),
               P("All results are produced from the supplied CSVs by <b>python run_pipeline.py</b> (Python, pandas, NumPy, "
                 "scikit-learn, SciPy, matplotlib). Steps: data validation → match state → match-situation pressure (both innings) → "
