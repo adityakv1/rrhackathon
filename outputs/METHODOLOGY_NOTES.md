@@ -85,6 +85,15 @@ Every assumption below is tested against the data. Scripts that reproduce each o
   - The alternative "rises most above own usual level" framing (uplift weight 50%) is reported as a sensitivity check: against the final list, 7 of 10 batters and 8 of 10 bowlers are unchanged.
   - That framing brings in Powell, Shanaka and Sikandar Raza (batters) and Avesh Khan and Mohsin Khan (bowlers). It drops Tim David, Abhishek Sharma and Gill (batters) and Bumrah and Rashid Khan (bowlers).
   - It is not the main ranking because the evidence shows that a player's personal pressure-vs-usual gap is mostly noise (only ~7–10% of it persists).
+- **Pressure definition tested out of sample (`python -m src.select_pressure`, `outputs/pressure_selection.md`):**
+  - 7 weightings × 3 thresholds (20/30/40%) were compared by rating players on 2022–24 (rating weights also from 2022–24) and correlating with unshrunk 2025–26 pressure performance.
+  - No definition was best for both groups. The definition used (0.5/0.3/0.2, top 30%) gives the most predictive batting ratings of all 21 (r = 0.46) but weak bowling ones (−0.09). Match situation only at 40% scored best overall (mean r 0.43; bowlers 0.45).
+  - **Not adopted (user decision, with reasons):**
+    - Estimates are noisy (SE ≈ 0.15 with ~40 players), and the best of 21 is optimistically biased.
+    - Rebuilding the full ranking with it cut the batting stability check from 0.39 to 0.24.
+    - At the same evidence threshold it grew the eligible pool by about half (83→124 batters, 65→98 bowlers), admitting many small-sample players (e.g. Sooryavanshi at #1 on Low confidence).
+  - It is reported in the methodology report as a tested alternative, and "separate pressure definitions for batting and bowling" is listed as future work.
+- **Consistency-first ordering:** ranking by each player's 20th-percentile bootstrap rating (`safe_rank`) keeps 9/10 batters and 10/10 bowlers of the final lists.
 - **Eligibility (brief: best performers under pressure, 2022–26):**
   - Batters need at least 200 high-pressure balls faced and 15 pressure innings; bowlers need at least 240 high-pressure balls and 20 pressure spells, across all competitions.
   - Confidence tiers: Medium from 300 (bat) or 360 (bowl) pressure balls; High from 500 or 600.

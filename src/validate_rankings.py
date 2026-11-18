@@ -16,7 +16,7 @@ import numpy as np
 import pandas as pd
 
 from . import config as C
-from .cup import (SHRINK, BAT_COLS, BOWL_COLS, CPI_VARIANTS, ELIGIBLE, add_pressure, batting_table, bowling_table,
+from .cup import (BASE_CPI, SHRINK, BAT_COLS, BOWL_COLS, CPI_VARIANTS, ELIGIBLE, add_pressure, batting_table, bowling_table,
                   build_table, cup_score, data_weights, eb_shrink, load, player_context, score_pool)
 
 B = 100
@@ -86,7 +86,9 @@ def bootstrap(s: pd.DataFrame, ctx: pd.DataFrame, base: dict, weights: dict, rng
         out[r] = pd.DataFrame({"median_rank": R.median(axis=1), "rank_p05": R.quantile(0.05, axis=1),
                                "rank_p95": R.quantile(0.95, axis=1), "p_top10": (R <= 10).mean(axis=1),
                                # B: bagged rating = average rating over the resampled datasets (smooths sampling noise)
-                               "bagged_cup": pd.concat(cups[r], axis=1).mean(axis=1)})
+                               "bagged_cup": pd.concat(cups[r], axis=1).mean(axis=1),
+                               # "safest" rating: the level a player exceeds in 80% of resamples (rewards consistency)
+                               "cup_p20": pd.concat(cups[r], axis=1).quantile(0.20, axis=1)})
     return out
 
 
@@ -182,7 +184,7 @@ def main():
     FIG.mkdir(parents=True, exist_ok=True)
     s = load()
     ctx = player_context(s)
-    add_pressure(s, *CPI_VARIANTS["baseline 0.5/0.3/0.2"])
+    add_pressure(s, *CPI_VARIANTS[BASE_CPI])
     base, weights = {}, {}
     for r in ["bat", "bowl"]:
         pool, _, rel = build_table(s, ctx, r)
@@ -198,6 +200,7 @@ def main():
     for r, title in [("bat", "Batters"), ("bowl", "Bowlers")]:
         df = base[r].join(boot[r])
         df["final_rank"] = df["bagged_cup"].rank(ascending=False, method="first").astype(int)
+        df["safe_rank"] = df["cup_p20"].rank(ascending=False, method="first").astype(int)
         df = df.sort_values("final_rank")
         df.to_csv(C.OUTPUTS / f"rankings_{'batting' if r == 'bat' else 'bowling'}_with_uncertainty.csv")
         rank_chart(df, f"{title}: top 10 with rank uncertainty", f"rank_uncertainty_{r}.png")

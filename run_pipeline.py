@@ -12,6 +12,7 @@ Steps (each reads the previous step's files in data/processed and writes a repor
   msp_inn1           first-innings win probability; join innings  (~5 min)
   tsp                tournament stakes per team per match          (~15 s)
   ipp                form pressure per player per match            (~10 s)
+  select_pressure    choose pressure weights / cut-off out of sample (~6 min)
   cup                ratings and rankings (+ sensitivity variants) (~1 min)
   validate_rankings  separation, bootstrap, stability, charts      (~5 min)
 """
@@ -26,6 +27,7 @@ STEPS = [
     ("msp_inn1", "src.pressure_msp1"),
     ("tsp", "src.pressure_tsp"),
     ("ipp", "src.pressure_ipp"),
+    ("select_pressure", "src.select_pressure"),
     ("cup", "src.cup"),
     ("validate_rankings", "src.validate_rankings"),
 ]

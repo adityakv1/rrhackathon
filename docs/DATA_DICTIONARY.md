@@ -115,6 +115,7 @@ Written by `src/cup.py`, one row per **eligible** player, sorted by rank. Prefix
 - `bagged_cup`: the rating averaged over 100 match-level resamples, with shrinkage settings held at their full-data values.
 - `final_rank`: the rank by `bagged_cup`. **This is the submitted order.**
 - `median_rank`, `rank_p05` and `rank_p95` (90% interval), and `p_top10`.
+- `cup_p20`: the rating a player exceeds in 80% of resamples. `safe_rank` is the rank by `cup_p20` (consistency-first ordering, used as a robustness check).
 
 `outputs/sensitivity_top10_*.csv`: the top 10 under every sensitivity variant, side by side.
 
@@ -123,3 +124,9 @@ The same columns as `rankings_*.csv`, but for **all** players, including those b
 
 ## `outputs/pressure_profile.json` — where high-pressure balls come from
 The share of high-pressure balls (batting view) in nearly-decided games (win probability below 15% or above 85%), in overs 1–3, in overs 7–16 and in overs 17–20.
+
+## `outputs/pressure_selection.csv` / `.md` — pressure definitions compared out of sample
+Written by `src/select_pressure.py`, with one row per definition (weights for situation/stakes/form × high-pressure share).
+- `batters r` / `bowlers r`: correlation of 2022–24 ratings with unshrunk 2025–26 pressure performance. `mean r` is their average.
+- `mean stability`: Spearman correlation between 2022–24 and 2025–26 ratings.
+- `in use`: marks the definition used for the rankings.

@@ -212,6 +212,15 @@ What `score_balls` computes for every chase ball:
 
 ---
 
+## `src/select_pressure.py` — pressure definitions compared out of sample
+
+| Function | What it does |
+|---|---|
+| `evaluate(s, share)` | For the pressure flags currently in `s`: rates players on 2022–24 (weights from 2022–24 only), then correlates the ratings with unshrunk 2025–26 pressure performance and with 2025–26 ratings. Uses the same evidence bar at every cut-off. |
+| `main()` | Runs 7 weightings × 3 cut-offs and writes `outputs/pressure_selection.*`. It reports the comparison; the definition used is set in `src/cup.py` (`BASE_CPI`, `CPI_WEIGHTS`, `PRESSURE_SHARE`). |
+
+---
+
 ## `src/validate_rankings.py` — evidence for the report
 
 | Function | What it does |

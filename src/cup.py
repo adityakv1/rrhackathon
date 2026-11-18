@@ -31,7 +31,7 @@ import pandas as pd
 
 from . import config as C
 
-PRESSURE_SHARE = 0.30
+PRESSURE_SHARE = 0.30      # alternatives 0.20 / 0.40 compared out of sample in src/select_pressure.py
 RECENCY_HALFLIFE = None    # None = all seasons equal; a number = weight halves every N seasons back
 FULL_MEMBERS = {"India", "Australia", "England", "New Zealand", "South Africa", "Pakistan", "Sri Lanka",
                 "West Indies", "Bangladesh", "Afghanistan", "Ireland", "Zimbabwe"}
@@ -41,8 +41,12 @@ DATA_VARIANTS = {"baseline: tiers 1/1/0.4/0.3, equal seasons": (TIER_WEIGHT, Non
                                                                   "T20I (associate)": 0.5, "Other T20": 0.3}, None),
                  "all balls equal": ({k: 1.0 for k in TIER_WEIGHT}, None),
                  "recency-weighted (half-life 2 seasons)": (TIER_WEIGHT, 2.0)}
+# Pressure definition used for the main ranking. Alternative weightings and cut-offs are compared out of sample
+# in src/select_pressure.py (outputs/pressure_selection.md); the comparison was too noisy to justify a change
+# (see the methodology notes), so the original definition is retained.
 CPI_WEIGHTS = {"msp": 0.5, "tsp": 0.3, "ipp": 0.2}
-CPI_VARIANTS = {"baseline 0.5/0.3/0.2": (0.5, 0.3, 0.2), "equal 1/3 each": (1 / 3, 1 / 3, 1 / 3),
+BASE_CPI = "baseline 0.5/0.3/0.2"          # key of the pressure definition used for the main ranking
+CPI_VARIANTS = {BASE_CPI: (CPI_WEIGHTS["msp"], CPI_WEIGHTS["tsp"], CPI_WEIGHTS["ipp"]), "equal 1/3 each": (1 / 3, 1 / 3, 1 / 3),
                 "situation only": (1.0, 0.0, 0.0), "situation + stakes 0.6/0.4": (0.6, 0.4, 0.0)}
 CUP_WEIGHTS = {"bat": {"impact": 0.35, "scoring": 0.20, "survival": 0.15, "reliability": 0.20, "uplift": 0.10},
                "bowl": {"impact": 0.35, "economy": 0.20, "wickets": 0.15, "reliability": 0.20, "uplift": 0.10}}
@@ -461,7 +465,7 @@ def run_all():
     """Score the baseline and every sensitivity variant. Returns (baseline rankings, variant rankings, diagnostics)."""
     s = load()
     ctx = player_context(s)
-    base_cpi = CPI_VARIANTS["baseline 0.5/0.3/0.2"]
+    base_cpi = CPI_VARIANTS[BASE_CPI]
     tables = {}
     for dlabel, (tw, hl) in DATA_VARIANTS.items():           # competition weighting / recency variants
         set_weights(s, tw, hl)
@@ -472,7 +476,7 @@ def run_all():
         add_pressure(s, *cw)
         tables[("cpi", clabel)] = {r: build_table(s, ctx, r) for r in ["bat", "bowl"]}
     add_pressure(s, *base_cpi)
-    base_key = ("cpi", "baseline 0.5/0.3/0.2")
+    base_key = ("cpi", BASE_CPI)
     out, variants, diag = {}, {}, {}
     for r in ["bat", "bowl"]:
         pool, ks, rel = tables[base_key][r]

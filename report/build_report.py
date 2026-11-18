@@ -175,6 +175,7 @@ def load():
     d["rel_bowl"] = md_table(cup.split("# Bowlers")[1], "Component repeatability")
     d["sep"] = md_table(val, "## 1.")
     d["temporal"] = md_table(val, "## 3.")
+    d["selection"] = pd.read_csv(OUT / "pressure_selection.csv")
     for r in ["bat", "bowl"]:
         d[f"top_{r}"] = pd.read_csv(OUT / f"sensitivity_top10_{'batting' if r == 'bat' else 'bowling'}.csv", index_col=0)
     return d
@@ -362,7 +363,36 @@ def build():
               eq(r"b\ \mathrm{is\ a\ high\text{-}pressure\ delivery}\ \Leftrightarrow\ \mathrm{CPI}_b\geq Q_{0.70}(\mathrm{CPI})"),
               P("The match situation receives the largest weight because it is specific to the delivery and can be validated "
                 "against results. The batter and bowler share the match-situation component but each takes the stakes of his "
-                "own team and his own form, so the same delivery may carry different pressure for each."),
+                "own team and his own form, so the same delivery may carry different pressure for each.")]
+    sel_t = d["selection"]
+    key = lambda w, sh: sel_t[(sel_t["weights (situation/stakes/form)"] == w) & (sel_t["high-pressure share"] == sh)].iloc[0]
+    in_use = key("0.5/0.3/0.2", 0.3)
+    best = sel_t.sort_values("mean r", ascending=False).iloc[0]
+    shown = [("Definition used (0.5 / 0.3 / 0.2, top 30%)", in_use)]
+    for w, sh in [(best["weights (situation/stakes/form)"], best["high-pressure share"]), ("0.6/0.2/0.2", 0.4),
+                  ("1/3 each", 0.3), ("0.5/0.3/0.2", 0.4)]:
+        r = key(w, sh)
+        name = {"1/0/0": "Match situation only", "1/3 each": "Equal thirds"}.get(w, w.replace("/", " / "))
+        shown.append((f"{name}, top {sh:.0%}", r))
+    rows = [["Pressure definition", "Batters r", "Bowlers r", "Mean"]] + \
+           [[n, f"{r['batters r']:.2f}", f"{r['bowlers r']:.2f}", f"{r['mean r']:.2f}"] for n, r in shown]
+    best_bat = sel_t["batters r"].max()
+    story += [P(f"The weights and the 30% threshold were compared with twenty alternatives (seven weightings, three thresholds) "
+                f"by rating players on 2022–24 data and correlating the ratings with their 2025–26 performance under pressure. "
+                f"No definition was best for both groups: the definition used gives the most predictive batting ratings of all "
+                f"21 (r = {in_use['batters r']:.2f}"
+                + (", the highest in the comparison" if in_use["batters r"] >= best_bat else f", against a maximum of {best_bat:.2f}")
+                + f"), while a definition based on the match "
+                f"situation alone at a 40% threshold gives the most predictive bowling ratings (r = {best['bowlers r']:.2f}). With "
+                f"about 40 players per group each correlation has a standard error near 0.15, and selecting the best of 21 "
+                f"overstates its advantage. When the full ranking was rebuilt with that alternative, the batting rating's "
+                f"correlation with 2025–26 pressure performance in the test of Section 5.6 fell from 0.39 to 0.24, and at the same "
+                f"evidence threshold the eligible pool grew by about half (83 to 124 batters, 65 to 98 bowlers), adding many "
+                f"players with small samples. The original definition was therefore retained."),
+              table(rows, [8.6 * cm, 2.6 * cm, 2.6 * cm, 2.6 * cm],
+                    caption="Out-of-sample comparison of pressure definitions (selected rows of 21).",
+                    note="Correlation between 2022–24 ratings and 2025–26 performance under pressure; rating weights were "
+                         "estimated on 2022–24 data only."),
               P("4.3.5 Validation of the Pressure Index", "h3")]
     sep = d["sep"]
     sel = sep[sep["decile"].isin(["1", "3", "5", "7", "8", "9", "10"])]
@@ -492,15 +522,19 @@ def build():
     skip = lambda c: "data-driven" in c or "baseline:" in c or "baseline 0.5" in c
     keys = [c for c in ob if not skip(c)]
     vb, vw = [ob[c] for c in keys], [ow[c] for c in keys]
+    safe_b = len(set(bat.player_name.head(10)) & set(bat.sort_values("safe_rank").player_name.head(10)))
+    safe_w = len(set(bowl.player_name.head(10)) & set(bowl.sort_values("safe_rank").player_name.head(10)))
     story += [table([["Alternative specification", "Batters retained", "Bowlers retained"]] +
-                    [[labels.get(c, c), f"{ob[c]} of 10", f"{ow[c]} of 10"] for c in keys],
+                    [[labels.get(c, c), f"{ob[c]} of 10", f"{ow[c]} of 10"] for c in keys] +
+                    [["Ordering by 20th-percentile rating (consistency-first)", f"{safe_b} of 10", f"{safe_w} of 10"]],
                     [10.0 * cm, 3.3 * cm, 3.3 * cm], caption="Players retained in the top 10 under alternative specifications.",
                     head=P("5.4 Robustness and Uncertainty", "h2")),
               P(f"Across the alternative specifications, between {min(vb)} and {max(vb)} of the ten batters and between "
                 f"{min(vw)} and {max(vw)} of the ten bowlers are retained (medians {int(pd.Series(vb).median())} and "
                 f"{int(pd.Series(vw).median())}). The largest changes arise from rating on the impact component alone and from "
-                f"defining pressure by the match situation only, which indicates that the stakes and form components contribute "
-                f"information. The first five places in each list are considerably more stable than places six to ten."),
+                f"changes to the pressure definition, the most influential modelling choice (Section 4.3.4). Ordering players by "
+                f"the rating they exceed in 80% of resamples, which favours consistency over peak level, retains {safe_b} batters "
+                f"and {safe_w} bowlers. The first five places in each list are considerably more stable than places six to ten."),
               figure([fig_ranks(bat, "bat"), fig_ranks(bowl, "bowl")],
                      "Final rank, median resampled rank and 90% rank interval for the top-10 batters (left) and bowlers (right).")]
 
@@ -587,15 +621,14 @@ def build():
                     "Qualification rules for some multi-team events could not be reconstructed; 108 team-matches are assigned "
                     "neutral stakes.",
                     "Three top-10 players (Klaasen, Rinku Singh and Narine) have low confidence owing to smaller samples.",
-                    "The pressure weights, the 30% threshold and the tier weights involve judgement; their effect is reported in "
-                    "Section 5.4."])
+                    "The pressure weights and threshold were compared out of sample with twenty alternatives (Section 4.3.4), "
+                    "but with about 40 players per group that comparison cannot identify a single best definition; the tier "
+                    "weights remain a judgement, and the effect of all three is reported in Section 5.4."])
     story += [P("6.3 Future Work", "h2")]
-    story += items(["Incorporating the direction of pressure, so that the side behind in a match carries greater pressure.",
-                    "Ranking by the lower bound of each player's rating interval to favour consistently strong records.",
+    story += items(["Separate pressure definitions for batting and bowling, since the out-of-sample comparison favours "
+                    "different definitions for each.",
+                    "Incorporating the direction of pressure, so that the side behind in a match carries greater pressure.",
                     "Extending the data to further seasons and domestic leagues to increase sample sizes."])
-    story += [P("Reproducibility", "h1"),
-              P(f"All results are generated from the supplied data by run_pipeline.py, and this report is generated by "
-                f"report/build_report.py. Code and documentation are available at {REPO}.")]
 
     doc = SimpleDocTemplate(str(PDF), pagesize=A4, leftMargin=2.3 * cm, rightMargin=2.3 * cm, topMargin=2.2 * cm,
                             bottomMargin=2.2 * cm, title="Measuring Player Performance Under Pressure in T20 Cricket",
