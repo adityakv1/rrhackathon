@@ -1,0 +1,14 @@
+# --- required by the pipeline (run_pipeline.py)
+pandas>=2.2
+numpy
+pyarrow
+scikit-learn
+scipy
+matplotlib
+tabulate
+
+# --- optional: exploration notebooks and the planned dashboard
+jupyter
+seaborn
+plotly
+streamlit
